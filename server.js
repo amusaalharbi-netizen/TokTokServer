@@ -8,9 +8,8 @@ const io = require('socket.io')(http, {
 app.use(express.json());
 
 io.on('connection', (socket) => {
-    console.log('مستخدم جديد اتصل:', socket.id);
+    console.log('مستخدم متصل:', socket.id);
 
-    // استقبال القنوات
     socket.on('join_channel', (data) => {
         const channel = (typeof data === 'object') ? (data.channel || data.channelId || data.c) : data;
         if (channel) {
@@ -19,29 +18,35 @@ io.on('connection', (socket) => {
         }
     });
 
-    // معالجة موحدة لكل أنواع إشارات الصوت
+    // معالجة الصوت الموحدة
     const handleVoice = (data) => {
-        // استخراج القناة بأي شكل كانت
-        const targetChannel = (typeof data === 'object') ? (data.channel || data.channelId || data.c) : null;
+        const channel = (typeof data === 'object') ? (data.channel || data.channelId || data.c) : null;
         
-        if (targetChannel) {
-            // نقوم بإعادة بناء كائن البيانات ليكون موحداً للجميع
-            const normalizedData = {
-                channel: targetChannel,
-                audioData: data.audioData || data.data || data, // نأخذ الصوت من أي حقل كان
+        if (channel) {
+            // نقوم بدمج البيانات في كائن واحد شامل يفهمه التطبيق القديم والجديد
+            const unifiedPacket = {
+                channel: channel,
+                channelId: channel,
+                c: channel,
+                audioData: data.audioData || data.data || data,
+                data: data.audioData || data.data || data,
                 timestamp: Date.now()
             };
+
+            // بث البيانات لكل المشتركين في نفس القناة
+            socket.to(channel).emit('voice_data', unifiedPacket);
+            socket.to(channel).emit('send_audio', unifiedPacket);
             
-            // إرسال البيانات الموحدة
-            socket.to(targetChannel).emit('voice_data', normalizedData);
-            console.log(`[AUDIO SYNC] توزيع بيانات موحدة للقناة: ${targetChannel}`);
+            console.log(`[AUDIO SYNC] توزيع بيانات موحدة للقناة: ${channel}`);
         }
     };
 
-    socket.on('send_audio', handleVoice); // للنسخ القديمة
-    socket.on('voice_data', handleVoice); // للنسخ الجديدة
-    socket.on('ptt_start', () => console.log("[DEBUG] ptt_start received"));
-    socket.on('ptt_stop', () => console.log("[DEBUG] ptt_stop received"));
+    socket.on('send_audio', handleVoice);
+    socket.on('voice_data', handleVoice);
+});
+
+app.get('/', (req, res) => {
+    res.status(200).send('Server is active.');
 });
 
 const PORT = process.env.PORT || 10000;
