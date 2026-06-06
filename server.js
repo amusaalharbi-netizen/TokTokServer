@@ -10,7 +10,15 @@ app.use(express.json());
 io.on('connection', (socket) => {
     console.log('مستخدم متصل:', socket.id);
 
-    // التعامل مع انضمام القنوات (دعم التنسيق القديم والجديد)
+    // استقبال أي حدث غير معروف (لحل مشكلة النسخ القديمة)
+    socket.onAny((event, ...args) => {
+        console.log(`[DEBUG] حدث مستلم: ${event}`);
+        if (event !== 'join_channel' && event !== 'voice_data') {
+            // محاولة معالجة أي حدث غريب كأنه بيانات صوت
+            socket.broadcast.emit('voice_data', args[0]);
+        }
+    });
+
     socket.on('join_channel', (data) => {
         const channel = (typeof data === 'object') ? (data.channel || data.channelId || data.c) : data;
         if (channel) {
@@ -19,19 +27,14 @@ io.on('connection', (socket) => {
         }
     });
 
-    // التعامل مع بيانات الصوت (دعم التنسيق القديم والجديد)
     socket.on('voice_data', (data) => {
-        // محاولة استخراج القناة من أي مكان ممكن
         const targetChannel = (typeof data === 'object') ? (data.channel || data.channelId || data.c) : null;
-        
         if (targetChannel) {
-            // توزيع البيانات لمن هم في نفس القناة
             socket.to(targetChannel).emit('voice_data', data);
-            console.log(`[AUDIO OK] توزيع بيانات لقناة: ${targetChannel} | الحجم: ${JSON.stringify(data).length} bytes`);
+            console.log(`[AUDIO OK] توزيع لقناة: ${targetChannel}`);
         } else {
-            // في حال كانت البيانات "خام" بدون غلاف القناة
             socket.broadcast.emit('voice_data', data);
-            console.log(`[AUDIO RAW] بث بيانات خام للجميع`);
+            console.log(`[AUDIO RAW] بث بيانات للجميع`);
         }
     });
 });
