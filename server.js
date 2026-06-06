@@ -3,32 +3,43 @@ const app = express();
 const http = require('http').createServer(app);
 const io = require('socket.io')(http);
 
+app.use(express.json());
+
 const MIN_ALLOWED_VERSION_CODE = 2;
+const CHANNEL_69_PASSWORD = "8966";
+let authorizedUsers = {};
 
 io.on('connection', (socket) => {
-    // الحصول على رقم الإصدار من "يد" الاتصال (Handshake)
+    // الحصول على رقم النسخة من الاتصال
     const clientVersion = socket.handshake.query.appVersionCode;
 
-    // طرد أي نسخة قديمة فوراً عند محاولة الاتصال
+    // الحماية الصارمة عند الاتصال
     if (!clientVersion || parseInt(clientVersion) < MIN_ALLOWED_VERSION_CODE) {
-        console.log(`[SECURITY] طرد نسخة قديمة: ${clientVersion}`);
-        socket.disconnect(true); // قطع الاتصال فوراً
+        socket.disconnect(true);
         return;
     }
 
     socket.on('join_channel', (data) => {
-        // التحقق من الرمز للقناة 69
-        if (data.channel === "69" && data.password !== "8966") {
+        if (data.channel === "69" && data.password !== CHANNEL_69_PASSWORD) {
             socket.emit('auth_error', "رمز الدخول غير صحيح!");
             return;
         }
+        if (data.channel === "69") authorizedUsers[data.username] = true;
         socket.join(data.channel);
     });
 
     socket.on('voice_data', (data) => {
-        // منع أي صوت للقناة 69 إلا للمصرح لهم
+        if (data.channel === "69" && !authorizedUsers[data.username]) return;
         socket.to(data.channel).emit('voice_data', data);
     });
 });
 
-http.listen(process.env.PORT || 3000, '0.0.0.0');
+app.get('/', (req, res) => {
+    res.status(200).send('TokTok Secure Server is Active.');
+});
+
+// المنفذ الديناميكي (الأهم)
+const PORT = process.env.PORT || 10000;
+http.listen(PORT, '0.0.0.0', () => {
+    console.log(`Server running on port ${PORT}`);
+});
