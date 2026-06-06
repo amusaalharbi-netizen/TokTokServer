@@ -8,22 +8,25 @@ const io = require('socket.io')(http, {
 app.use(express.json());
 
 io.on('connection', (socket) => {
-    console.log('مستخدم متصل:', socket.id);
+    console.log('مستخدم جديد اتصل - ID:', socket.id);
 
-    // معالجة كافة أنواع الأحداث لضمان توافق النسخ القديمة
+    // هذا السطر سيكشف لنا أي حدث يأتي من النسخة الجديدة
     socket.onAny((event, ...args) => {
-        // إذا كان الحدث هو send_audio (الخاص بالنسخ القديمة) نعامله كأنه voice_data
-        if (event === 'send_audio') {
-            const data = args[0];
-            const targetChannel = (typeof data === 'object') ? (data.channel || data.channelId || data.c) : null;
-            
-            if (targetChannel) {
-                socket.to(targetChannel).emit('voice_data', data);
-                console.log(`[LEGACY AUDIO] توزيع بيانات من ${event} لقناة: ${targetChannel}`);
-            }
+        if (event !== 'join_channel' && event !== 'send_audio' && event !== 'voice_data') {
+            console.log(`[DEBUG] حدث مجهول وصل من التطبيق: ${event}`);
         }
     });
 
+    // دعم النسخ القديمة
+    socket.on('send_audio', (data) => {
+        const targetChannel = (typeof data === 'object') ? (data.channel || data.channelId || data.c) : null;
+        if (targetChannel) {
+            socket.to(targetChannel).emit('voice_data', data);
+            console.log(`[LEGACY AUDIO] توزيع بيانات من send_audio لقناة: ${targetChannel}`);
+        }
+    });
+
+    // دعم النسخ الجديدة
     socket.on('join_channel', (data) => {
         const channel = (typeof data === 'object') ? (data.channel || data.channelId || data.c) : data;
         if (channel) {
@@ -37,9 +40,6 @@ io.on('connection', (socket) => {
         if (targetChannel) {
             socket.to(targetChannel).emit('voice_data', data);
             console.log(`[AUDIO OK] توزيع لقناة: ${targetChannel}`);
-        } else {
-            socket.broadcast.emit('voice_data', data);
-            console.log(`[AUDIO RAW] بث بيانات للجميع`);
         }
     });
 });
