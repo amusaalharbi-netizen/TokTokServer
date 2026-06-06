@@ -10,23 +10,14 @@ app.use(express.json());
 io.on('connection', (socket) => {
     console.log('مستخدم جديد اتصل - ID:', socket.id);
 
-    // هذا السطر سيكشف لنا أي حدث يأتي من النسخة الجديدة
+    // استقبال أي حدث للتأكد من رؤية تحركات التطبيق الجديد
     socket.onAny((event, ...args) => {
         if (event !== 'join_channel' && event !== 'send_audio' && event !== 'voice_data') {
             console.log(`[DEBUG] حدث مجهول وصل من التطبيق: ${event}`);
         }
     });
 
-    // دعم النسخ القديمة
-    socket.on('send_audio', (data) => {
-        const targetChannel = (typeof data === 'object') ? (data.channel || data.channelId || data.c) : null;
-        if (targetChannel) {
-            socket.to(targetChannel).emit('voice_data', data);
-            console.log(`[LEGACY AUDIO] توزيع بيانات من send_audio لقناة: ${targetChannel}`);
-        }
-    });
-
-    // دعم النسخ الجديدة
+    // معالجة القنوات (توحيد المسار)
     socket.on('join_channel', (data) => {
         const channel = (typeof data === 'object') ? (data.channel || data.channelId || data.c) : data;
         if (channel) {
@@ -35,13 +26,18 @@ io.on('connection', (socket) => {
         }
     });
 
-    socket.on('voice_data', (data) => {
+    // توحيد استقبال الصوت من القديم (send_audio) والجديد (voice_data)
+    const handleVoice = (data) => {
         const targetChannel = (typeof data === 'object') ? (data.channel || data.channelId || data.c) : null;
         if (targetChannel) {
+            // هنا السيرفر يعيد بث الصوت دائماً بصيغة voice_data ليفهمها الجميع
             socket.to(targetChannel).emit('voice_data', data);
-            console.log(`[AUDIO OK] توزيع لقناة: ${targetChannel}`);
+            console.log(`[AUDIO SYNC] إعادة بث للصوت في القناة: ${targetChannel}`);
         }
-    });
+    };
+
+    socket.on('send_audio', handleVoice);
+    socket.on('voice_data', handleVoice);
 });
 
 app.get('/', (req, res) => {
