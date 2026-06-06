@@ -10,12 +10,17 @@ app.use(express.json());
 io.on('connection', (socket) => {
     console.log('مستخدم متصل:', socket.id);
 
-    // استقبال أي حدث غير معروف (لحل مشكلة النسخ القديمة)
+    // معالجة كافة أنواع الأحداث لضمان توافق النسخ القديمة
     socket.onAny((event, ...args) => {
-        console.log(`[DEBUG] حدث مستلم: ${event}`);
-        if (event !== 'join_channel' && event !== 'voice_data') {
-            // محاولة معالجة أي حدث غريب كأنه بيانات صوت
-            socket.broadcast.emit('voice_data', args[0]);
+        // إذا كان الحدث هو send_audio (الخاص بالنسخ القديمة) نعامله كأنه voice_data
+        if (event === 'send_audio') {
+            const data = args[0];
+            const targetChannel = (typeof data === 'object') ? (data.channel || data.channelId || data.c) : null;
+            
+            if (targetChannel) {
+                socket.to(targetChannel).emit('voice_data', data);
+                console.log(`[LEGACY AUDIO] توزيع بيانات من ${event} لقناة: ${targetChannel}`);
+            }
         }
     });
 
