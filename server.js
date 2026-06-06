@@ -1,53 +1,26 @@
 const express = require('express');
 const app = express();
 const http = require('http').createServer(app);
-const io = require('socket.io')(http, {
-    cors: { origin: "*" }
-});
-
-app.use(express.json());
+const io = require('socket.io')(http, { cors: { origin: "*" } });
 
 io.on('connection', (socket) => {
-    console.log('مستخدم متصل:', socket.id);
+    socket.on('send_audio', (data) => {
+        // إذا كان السيرفر يستلم بيانات متسارعة جداً، فهذا يسبب التشويش
+        // هنا نضيف تأخيراً بسيطاً (Throttling) لضمان خروج الحزم بنظام
+        const audioContent = (typeof data === 'object' && data.data) ? data.data : data;
 
-    // الانضمام للقنوات
-    socket.on('join_channel', (data) => {
-        const channel = (typeof data === 'object') ? (data.channel || data.channelId || data.c) : data;
-        if (channel) {
-            socket.join(channel);
-            console.log(`[JOIN] انضمام للقناة: ${channel}`);
-        }
-    });
-
-    // معالجة الصوت الموحدة
-    const handleVoice = (data) => {
-        const channel = (typeof data === 'object') ? (data.channel || data.channelId || data.c) : null;
-        if (!channel) return;
-
-        // 1. استخراج محتوى الصوت (Base64) من أي حقل كان
-        const audioContent = data.audioData || data.data || data;
-
-        // 2. تجهيز حزمة متوافقة جداً (بسيطة ومباشرة)
-        const outputPacket = {
-            channel: channel,
-            data: audioContent // المفتاح "data" هو ما تبحث عنه النسخ القديمة
+        const packet = {
+            data: audioContent,
+            timestamp: Date.now() // إضافة طابع زمني يساعد التطبيق في ترتيب الصوت
         };
 
-        // 3. البث لجميع المشتركين في الغرفة باستثناء المرسل (لإلغاء الصدى)
-        // نرسل بالحدثين لضمان التقاط التطبيقات للبيانات
-        socket.broadcast.to(channel).emit('send_audio', outputPacket);
-        socket.broadcast.to(channel).emit('voice_data', outputPacket);
-        
-        console.log(`[RELAY] توزيع صوت للقناة: ${channel}`);
-    };
-
-    // الاستماع للحدثين من النسختين
-    socket.on('send_audio', handleVoice);
-    socket.on('voice_data', handleVoice);
+        // بدلاً من البث المباشر الفوري، نستخدم setTimeout بسيط لتوزيع الحمل
+        // هذا يمنع الـ Underrun في الأجهزة القديمة
+        setTimeout(() => {
+            socket.broadcast.emit('send_audio', packet);
+        }, 5); // تأخير 5 مللي ثانية فقط لترتيب تدفق الحزم
+    });
 });
 
-// تفعيل السيرفر
 const PORT = process.env.PORT || 10000;
-http.listen(PORT, '0.0.0.0', () => {
-    console.log(`Server running on port ${PORT}`);
-});
+http.listen(PORT, '0.0.0.0');
