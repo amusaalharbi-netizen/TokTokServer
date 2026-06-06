@@ -5,45 +5,54 @@ const io = require('socket.io')(http);
 
 app.use(express.json());
 
-// مصفوفة لتخزين المستخدمين المصرح لهم (Tokenization)
+// المتغيرات الثابتة للحماية
+const MIN_ALLOWED_VERSION_CODE = 2; // لن يقبل السيرفر أي نسخة أقل من 2
+const CHANNEL_69_PASSWORD = "8966";
+
+// مصفوفة لتخزين المستخدمين المصرح لهم
 let authorizedUsers = {}; 
 
 io.on('connection', (socket) => {
 
-    // حدث انضمام للقناة مع تحقق أمني
     socket.on('join_channel', (data) => {
-        const { channel, username, password } = data;
+        const { channel, username, password, appVersionCode } = data;
 
-        // طبقة حماية للقناة 69
+        // حماية أمنية: منع النسخ القديمة من دخول القناة 69
         if (channel === "69") {
-            if (password !== "8966") {
-                socket.emit('auth_error', "رمز الدخول للقناة 69 غير صحيح!");
-                return; // إيقاف الانضمام فوراً
+            if (!appVersionCode || parseInt(appVersionCode) < MIN_ALLOWED_VERSION_CODE) {
+                socket.emit('auth_error', "نسخة تطبيقك قديمة، يرجى التحديث للدخول لهذه القناة.");
+                console.log(`[BLOCK] نسخة قديمة حاولت دخول القناة 69: ${username}`);
+                return;
             }
-            authorizedUsers[username] = true; // تسجيله كمستخدم مصرح له
+
+            // التحقق من رمز الدخول للقناة 69
+            if (password !== CHANNEL_69_PASSWORD) {
+                socket.emit('auth_error', "رمز الدخول غير صحيح!");
+                return;
+            }
+            
+            authorizedUsers[username] = true;
         }
 
         socket.join(channel);
         socket.emit('auth_success', "تم الدخول بنجاح");
+        console.log(`[INFO] المستخدم ${username} انضم للقناة ${channel}`);
     });
 
-    // مراقبة الرسائل الصوتية (الحماية الثانية)
+    // حماية الصوت: لا يسمح بإرسال صوت للقناة 69 إلا للمصرح لهم
     socket.on('voice_data', (data) => {
         const { channel, username } = data;
         
-        // إذا كان يحاول إرسال صوت للقناة 69 وهو غير مصرح له
         if (channel === "69" && !authorizedUsers[username]) {
-            console.log(`[SECURITY ALERT] محاولة اختراق صوتي من ${username}`);
-            return; // تجاهل حزمة الصوت تماماً
+            return; // تجاهل حزمة الصوت
         }
         
-        // إذا كان مصرحاً له، مرر الصوت لبقية المستخدمين
         socket.to(channel).emit('voice_data', data);
     });
 });
 
 app.get('/', (req, res) => {
-    res.status(200).send('TokTok Secure Server is Active.');
+    res.status(200).send('TokTok Secure Server Active');
 });
 
 const PORT = process.env.PORT || 3000;
